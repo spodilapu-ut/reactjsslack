@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import App from './components/App';
 import Login from './components/Auth/Login';
+import About from './components/About';
 import Spinner from './components/Spinner';
 import Register from './components/Auth/Register';
 import registerServiceWorker from './registerServiceWorker';
@@ -37,6 +38,7 @@ class Root extends React.Component {
                 <Route exact path ='/' component = {App} />
                 <Route path ='/login' component = {Login} />
                 <Route path ='/Register' component = {Register} />
+                <Route path ='/about' component = {About} />
             </Switch>
         )
     }
