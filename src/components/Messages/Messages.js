@@ -28,6 +28,17 @@ class Messages extends React.Component {
         }
     }
 
+    componentWillUnmount(){
+        this.removeListeners();
+    }
+
+    removeListeners = () => {
+        const {channel, user} = this.state;
+        if(channel && user) {
+            this.getMessagesRef().child(channel.id).off();
+        }
+    };
+
     getMessagesRef = () => {
         const {messagesRef, privateMessagesRef, privateChannel} = this.state;
         return privateChannel ? privateMessagesRef : messagesRef;
