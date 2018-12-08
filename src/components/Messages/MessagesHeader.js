@@ -26,9 +26,9 @@ class MessagesHeader extends React.Component {
                         />
                     )}
                     </span>
-                    <Header.Subheader>
-                    {numUniqueUsers}
-                </Header.Subheader>
+                    {privateChannel?'':<Header.Subheader>
+                        {numUniqueUsers}
+                    </Header.Subheader>}
                 </Header>
                 
                 {/* Channel Search Input */}

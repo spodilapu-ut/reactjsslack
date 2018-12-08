@@ -1,4 +1,6 @@
 import React from 'react';
+import {connect} from 'react-redux';
+import {setUserPosts} from '../../actions';
 import {Segment, Comment} from 'semantic-ui-react';
 
 import firebase from '../../firebase';
@@ -6,6 +8,8 @@ import firebase from '../../firebase';
 import MessagesHeader from './MessagesHeader';
 import MessagesForm from './MessagesForm';
 import Message from './Message';
+import Typing from './Typing';
+import Skeleton from './Skeleton';
 
 class Messages extends React.Component {
     state = {
@@ -21,18 +25,35 @@ class Messages extends React.Component {
         searchResults:[],
         privateChannel: this.props.isPrivateChannel,
         isChannelStarred: false,
-        usersRef: firebase.database().ref('users')
+        usersRef: firebase.database().ref('users'),
+        typingRef: firebase.database().ref('typing'),
+        typingUsers : [],
+        connectedRef: firebase.database().ref('.info/connected')
     }
     componentDidMount() {
         const {channel, user} = this.state;
         if(channel && user) {
             this.addListeners(channel.id);
             this.addUserStarsListener(channel.id, user.uid);
+            if(this.messagesEnd) {
+                this.scrollToBottom();
+            }
         }
     }
 
     componentWillUnmount(){
         this.removeListeners();
+    }
+
+    componentDidUpdate(prevProps, prevState) {
+        // setTimeout(() => this.messageInputRef.focus(), 0);
+        if(this.messagesEnd) {
+            this.scrollToBottom();
+        }
+    }
+
+    scrollToBottom = () => {
+        this.messagesEnd.scrollIntoView({behavior: 'smooth'});
     }
 
     removeListeners = () => {
@@ -49,15 +70,61 @@ class Messages extends React.Component {
 
     addListeners = channelId => {
         this.addMessageListener(channelId);
+        this.addTypingListeners(channelId);
         
     };
+
+    addTypingListeners = channelId => {
+        let typingUsers = [];
+        this.state.typingRef
+            .child(channelId)
+            .on('child_added', snap => {
+                if(snap.key !== this.state.user.uid) {
+                    typingUsers = typingUsers.concat({
+                        id: snap.key,
+                        name: snap.val()
+                    })
+                    this.setState({typingUsers});
+                }
+            })
+        this.state.typingRef
+            .child(channelId)
+            .on('child_removed', snap => {
+                const index = typingUsers.findIndex(user => user.id === snap.key);
+                if(index !== -1) {
+                    typingUsers = typingUsers.filter(user => user.id !== snap.key);
+                    this.setState({typingUsers});
+                }
+                if(snap.key !== this.state.user.uid) {
+                    typingUsers = typingUsers.concat({
+                        id: snap.key,
+                        name: snap.val()
+                    })
+                    this.setState({typingUsers});
+                }
+            })
+        this.state.connectedRef
+            .on("value", snap => {
+                if(snap.val() === true) {
+                    this.state.typingRef
+                        .child(channelId)
+                        .child(this.state.user.uid)
+                        .onDisconnect()
+                        .remove(err => {
+                            console.log(err);
+                        })
+                }
+            })
+
+    }
 
     addMessageListener = channelId => {
         let loadedMessages = [];
         this.getMessagesRef().child(channelId).on('child_added', snap=>{
             loadedMessages.push(snap.val());
-            this.setState({messages:loadedMessages, 'messageLoading':false} );
+            this.setState({messages:loadedMessages, 'messageLoading':true} );
             this.countUniqueUsers(loadedMessages);
+            this.countUserPosts(loadedMessages);
         });
     };
 
@@ -86,6 +153,21 @@ class Messages extends React.Component {
         this.setState({numUniqueUsers: numUniqueUsers});
     }
 
+    countUserPosts = messages => {
+        let userPosts = messages.reduce((acc, message) => {
+            if(message.user.name in acc) {
+                acc[message.user.name].count += 1;
+            }else {
+                acc[message.user.name] = {
+                    avatar:message.user.avatar,
+                    count:1
+                }
+            }
+            return acc;
+        }, {});
+        this.props.setUserPosts(userPosts);
+    }
+
     displayMessages = messages => (
         messages.length > 0 && messages.map(message => (
             <Message 
@@ -101,6 +183,24 @@ class Messages extends React.Component {
         return channel?`${this.state.privateChannel? '@':'#'}${channel.name}`:'';
 
     };
+
+    displayTypingUsers = users => (
+        users && users.map( user => (
+        <div style={{display: 'flex', alignItems: 'center', marginBottom: '0.2em'}} key={user.id}>
+            <span className="user__typing">{user.name} is typing</span> <Typing />
+        </div>
+        ))
+    )
+
+    displayMessagesSkelton = loading => (
+        loading ? (
+            <React.Fragment>
+                {[...Array(10)].map((_,i) => (
+                    <Skeleton key={i}/>
+                ))}
+            </React.Fragment>
+        ):null
+    )
     handleSearchChange = event => {
         this.setState({
             searchTerm: event.target.value,
@@ -163,7 +263,9 @@ class Messages extends React.Component {
             searchResults, 
             searchLoading, 
             privateChannel,
-            isChannelStarred
+            isChannelStarred,
+            typingUsers,
+            messageLoading
         } = this.state;
         return(
             <React.Fragment>
@@ -178,8 +280,12 @@ class Messages extends React.Component {
                 />
                 <Segment>
                     <Comment.Group className='messages'>
-                        {/* Messages */}
-                        {searchTerm ? this.displayMessages(searchResults): this.displayMessages(messages)}
+                        {this.displayMessagesSkelton(messageLoading)}
+                        {searchTerm 
+                        ? this.displayMessages(searchResults)
+                        : this.displayMessages(messages)}
+                        {this.displayTypingUsers(typingUsers)}
+                        <div ref={node => (this.messagesEnd = node)}></div>
                     </Comment.Group> 
                 </Segment>
                 <MessagesForm 
@@ -194,4 +300,4 @@ class Messages extends React.Component {
     }
 }
 
-export default Messages;
+export default connect(null, {setUserPosts})(Messages);
