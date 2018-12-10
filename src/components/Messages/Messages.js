@@ -18,7 +18,7 @@ class Messages extends React.Component {
         channel: this.props.currentChannel,
         user: this.props.currentUser,
         messages:[],
-        messageLoading: false,
+        messageLoading: true,
         numUniqueUsers:'',
         searchTerm: '',
         searchLoading:false,
@@ -28,11 +28,13 @@ class Messages extends React.Component {
         usersRef: firebase.database().ref('users'),
         typingRef: firebase.database().ref('typing'),
         typingUsers : [],
-        connectedRef: firebase.database().ref('.info/connected')
+        connectedRef: firebase.database().ref('.info/connected'),
+        listeners: [],
     }
     componentDidMount() {
-        const {channel, user} = this.state;
+        const {channel, user, listeners} = this.state;
         if(channel && user) {
+            this.removeListeners(listeners)
             this.addListeners(channel.id);
             this.addUserStarsListener(channel.id, user.uid);
             if(this.messagesEnd) {
@@ -42,7 +44,18 @@ class Messages extends React.Component {
     }
 
     componentWillUnmount(){
-        this.removeListeners();
+        this.removeListeners(this.state.listeners);
+        this.state.connectedRef.off();
+    }
+
+    addToListeners = (id, ref, event) => {
+        const index = this.state.listeners.findIndex(listener => {
+            return listener.id === id && listener.ref === ref && listener.event  === event;
+        })
+        if(index === -1) {
+            const newListener = {id, ref, event};
+            this.setState({listeners: this.state.listeners.concat(newListener)});
+        }
     }
 
     componentDidUpdate(prevProps, prevState) {
@@ -56,11 +69,10 @@ class Messages extends React.Component {
         this.messagesEnd.scrollIntoView({behavior: 'smooth'});
     }
 
-    removeListeners = () => {
-        const {channel, user} = this.state;
-        if(channel && user) {
-            this.getMessagesRef().child(channel.id).off();
-        }
+    removeListeners = listeners => {
+        listeners.forEach(listener => {
+            listener.ref.child(listener.id).off(listener.event);
+        })
     };
 
     getMessagesRef = () => {
@@ -87,6 +99,7 @@ class Messages extends React.Component {
                     this.setState({typingUsers});
                 }
             })
+        this.addToListeners(channelId, this.state.typingRef, 'child_added');
         this.state.typingRef
             .child(channelId)
             .on('child_removed', snap => {
@@ -103,6 +116,7 @@ class Messages extends React.Component {
                     this.setState({typingUsers});
                 }
             })
+        this.addToListeners(channelId, this.state.typingRef, 'child_removed');
         this.state.connectedRef
             .on("value", snap => {
                 if(snap.val() === true) {
@@ -115,17 +129,20 @@ class Messages extends React.Component {
                         })
                 }
             })
+        
 
     }
 
     addMessageListener = channelId => {
         let loadedMessages = [];
-        this.getMessagesRef().child(channelId).on('child_added', snap=>{
+        const ref = this.getMessagesRef();
+        ref.child(channelId).on('child_added', snap=>{
             loadedMessages.push(snap.val());
-            this.setState({messages:loadedMessages, 'messageLoading':true} );
+            this.setState({messages:loadedMessages, 'messageLoading':false} );
             this.countUniqueUsers(loadedMessages);
             this.countUserPosts(loadedMessages);
         });
+        this.addToListeners(channelId, ref, 'child_added');
     };
 
     addUserStarsListener = (channelId, userId) => {
